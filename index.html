@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PlantUML Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #ffffff;
+    --surface:  #f7f7f6;
+    --surface2: #f0f0ee;
+    --border:   rgba(0,0,0,.10);
+    --border2:  rgba(0,0,0,.18);
+    --text:     #111;
+    --muted:    #555;
+    --hint:     #999;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+    --radius: 10px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #111;
+      --surface: #1a1a1a;
+      --surface2:#222;
+      --border:  rgba(255,255,255,.10);
+      --border2: rgba(255,255,255,.18);
+      --text:    #eee;
+      --muted:   #aaa;
+      --hint:    #555;
+    }
+  }
+
+  html, body {
+    height: 100%;
+    font-family: var(--sans);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-rows: 52px 1fr;
+    grid-template-columns: 340px 1fr;
+    height: 100vh;
+    gap: 0;
+  }
+
+  /* ── Top bar ── */
+  .topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border-bottom: 0.5px solid var(--border2);
+    background: var(--bg);
+    padding: 0 16px;
+  }
+  .topbar-brand {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: .06em;
+    padding-right: 20px;
+    border-right: 0.5px solid var(--border2);
+    margin-right: 16px;
+  }
+  .topbar-brand span {
+    font-weight: 400;
+    color: var(--hint);
+  }
+  .topbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 400;
+    letter-spacing: .04em;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 0.5px solid var(--border2);
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all .12s;
+    white-space: nowrap;
+  }
+  .btn:hover { background: var(--surface); color: var(--text); }
+  .btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: var(--text);
+  }
+  .btn.primary:hover { opacity: .8; }
+  .btn:active { transform: scale(.97); }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    grid-column: 1;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    border-right: 0.5px solid var(--border2);
+    background: var(--bg);
+    overflow: hidden;
+  }
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    padding: 12px 14px 10px;
+    border-bottom: 0.5px solid var(--border);
+    gap: 8px;
+  }
+  .sidebar-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--hint);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .sidebar-footer {
+    padding: 10px 14px;
+    border-top: 0.5px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .stat {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--hint);
+    margin-left: auto;
+  }
+
+  textarea {
+    flex: 1;
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.65;
+    padding: 14px;
+    border: none;
+    outline: none;
+    background: var(--surface);
+    color: var(--text);
+    resize: none;
+    tab-size: 4;
+  }
+  textarea::selection { background: rgba(100,140,255,.25); }
+
+  /* ── Canvas ── */
+  .canvas {
+    grid-column: 2;
+    grid-row: 2;
+    overflow: auto;
+    background: var(--surface);
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .canvas-inner {
+    padding: 32px;
+    display: inline-block;
+    min-width: 100%;
+    min-height: 100%;
+  }
+  .canvas-wrap {
+    background: var(--bg);
+    border-radius: var(--radius);
+    border: 0.5px solid var(--border2);
+    overflow: hidden;
+    display: inline-block;
+    min-width: 200px;
+  }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: calc(100vh - 52px - 64px);
+    gap: 10px;
+  }
+  .empty-icon {
+    width: 40px;
+    height: 40px;
+    border: 1.5px dashed var(--border2);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 18px;
+    color: var(--hint);
+  }
+  .empty-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--hint);
+    letter-spacing: .04em;
+  }
+
+  /* ── Zoom controls ── */
+  .zoom-bar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    border: 0.5px solid var(--border2);
+    border-radius: 7px;
+    overflow: hidden;
+  }
+  .zoom-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--mono);
+    font-size: 14px;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    transition: all .1s;
+  }
+  .zoom-btn:hover { background: var(--surface); color: var(--text); }
+  .zoom-val {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 0 8px;
+    color: var(--hint);
+    border-left: 0.5px solid var(--border);
+    border-right: 0.5px solid var(--border);
+    min-width: 38px;
+    text-align: center;
+    line-height: 28px;
+  }
+
+  /* ── Notification ── */
+  .notif {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--text);
+    color: var(--bg);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 8px 14px;
+    border-radius: 7px;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: all .2s;
+    pointer-events: none;
+    z-index: 999;
+  }
+  .notif.show { opacity: 1; transform: translateY(0); }
+
+  /* ── SVG diagram styles ── */
+  .seq-svg { display: block; }
+
+  /* ── Sticky participant header overlay ── */
+  .sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 0.5px solid var(--border2);
+    display: none;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+  .sticky-header-inner {
+    display: flex;
+    align-items: center;
+    height: 48px;
+    /* no overflow:auto — we scroll it programmatically */
+    white-space: nowrap;
+  }
+  .sticky-part {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .sticky-part-box {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: #222;
+    background: #f7f7f7;
+    border: 0.75px solid #d4d4d4;
+    border-radius: 6px;
+    padding: 5px 14px;
+    white-space: nowrap;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sticky-part-actor {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    color: #222;
+    white-space: nowrap;
+  }
+  @media (prefers-color-scheme: dark) {
+    .sticky-part-box { background: #2a2a2a; border-color: #444; color: #ddd; }
+    .sticky-part-actor { color: #ddd; }
+  }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-brand">seq<span>.viewer</span></div>
+    <div style="font-family:var(--mono);font-size:10px;color:var(--hint);letter-spacing:.06em">PlantUML sequence diagram renderer</div>
+    <div class="topbar-right">
+      <div class="zoom-bar">
+        <button class="zoom-btn" onclick="zoom(-0.15)">−</button>
+        <div class="zoom-val" id="zoomVal">100%</div>
+        <button class="zoom-btn" onclick="zoom(+0.15)">+</button>
+      </div>
+      <button class="btn" onclick="fitToScreen()">fit</button>
+      <button class="btn" onclick="dlSVG()">↓ svg</button>
+      <button class="btn" onclick="dlPNG()">↓ png</button>
+      <button class="btn" id="btnShare" onclick="copyLink()">⌘ copy link</button>
+      <button class="btn primary" onclick="doRender()">render →</button>
+    </div>
+  </header>
+
+  <!-- Sidebar / Editor -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-label">uml source</span>
+      <button class="btn" style="padding:3px 8px" onclick="loadEx()">example</button>
+      <button class="btn" style="padding:3px 8px" onclick="clearSrc()">clear</button>
+    </div>
+    <textarea id="src" spellcheck="false" placeholder="@startuml&#10;...&#10;@enduml"></textarea>
+    <div class="sidebar-footer">
+      <span style="font-family:var(--mono);font-size:10px;color:var(--hint)">ctrl+enter to render</span>
+      <span class="stat" id="stat"></span>
+    </div>
+  </aside>
+
+  <!-- Canvas -->
+  <main class="canvas" id="canvas">
+    <div id="stickyHeader" class="sticky-header">
+      <div class="sticky-header-inner" id="stickyHeaderInner"></div>
+    </div>
+    <div class="canvas-inner" id="canvasInner">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">⟶</div>
+        <div class="empty-text">paste uml · press render</div>
+      </div>
+      <div class="canvas-wrap" id="diagramWrap" style="display:none">
+        <div id="out"></div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<div class="notif" id="notif"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+<script>
+// ─────────────────────────────────────────────
+// Example UML
+// ─────────────────────────────────────────────
+const EX = `@startuml
+actor User
+participant Client
+participant API
+participant Service
+User->Client: Send request
+Client->API: POST /action
+note right of Client
+Retry policy:
+max 3 attempts
+end note
+API->API: Validate request
+alt #Pink Validation failed
+    API->Client: 400 Bad Request
+    Client->User: Show error
+else #LightBlue Validation passed
+    API->Service: Forward to service
+    alt #LightBlue Resource exists
+        Service->API: Return existing data
+        API->Client: 200 OK
+        Client->User: Show result
+    else #palegreen Resource created
+        Service->Service: Process and save
+        Service->API: 201 Created
+        API->Client: 201 Created
+        Client->User: Show success
+    else #Pink Service error
+        Service->API: 500 Internal Error
+        API->Client: 502 Bad Gateway
+        Client->User: Show error
+    end
+end
+group Async callback #LightBlue
+    Service->API: Webhook notification
+    API->Client: Push update
+end
+@enduml`;
+
+// ─────────────────────────────────────────────
+// Color palette
+// ─────────────────────────────────────────────
+const PAL = {
+  pink:       { bg:'rgba(252,228,236,0.60)', bgSolid:'#fce4ec', border:'#e8a0b0', label:'#c1425a' },
+  lightblue:  { bg:'rgba(227,242,253,0.60)', bgSolid:'#e3f2fd', border:'#90bde8', label:'#2d6ab4' },
+  gold:       { bg:'rgba(255,249,220,0.65)', bgSolid:'#fff9dc', border:'#e8c96a', label:'#9a7200' },
+  lightyellow:{ bg:'rgba(255,249,220,0.65)', bgSolid:'#fff9dc', border:'#e8c96a', label:'#9a7200' },
+  palegreen:  { bg:'rgba(232,245,233,0.65)', bgSolid:'#e8f5e9', border:'#80c884', label:'#2e8a42' },
+  lightgreen: { bg:'rgba(232,245,233,0.65)', bgSolid:'#e8f5e9', border:'#80c884', label:'#2e8a42' },
+  default:    { bg:'rgba(245,245,245,0.50)', bgSolid:'#f5f5f5', border:'#d0d0d0', label:'#666'    }
+};
+function pal(n) {
+  if (!n) return PAL.default;
+  return PAL[n.toLowerCase().replace(/[^a-z]/g,'')] || PAL.default;
+}
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function esc(s) {
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function splitTxt(t, maxCh) {
+  const words = t.split(/\s+/), lines = []; let cur = '';
+  for (const w of words) {
+    if (cur && (cur+' '+w).length > maxCh) { lines.push(cur); cur = w; }
+    else cur = cur ? cur+' '+w : w;
+  }
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [''];
+}
+function notify(msg) {
+  const el = document.getElementById('notif');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ─────────────────────────────────────────────
+// Parser
+// ─────────────────────────────────────────────
+function parseUML(raw) {
+  const src = raw.replace(/@startuml[^\n]*\n?/,'').replace(/@enduml[\s\S]*/,'');
+  const lines = src.split('\n');
+  const parts = [], pmap = {}, evts = [];
+
+  function ensP(name, type='participant') {
+    const k = name.trim();
+    if (!pmap[k]) { const p = {name:k, alias:k, type}; parts.push(p); pmap[k] = p; }
+    return pmap[k];
+  }
+
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i].trim(); i++;
+    if (!line || line.startsWith("'")) continue;
+
+    // participant / actor declarations
+    const pm = line.match(/^(participant|actor|database|boundary|control|entity)\s+"?([^"]+)"?\s*(?:as\s+(\S+))?/i);
+    if (pm) {
+      const alias = (pm[3]||pm[2]).trim(), name = pm[2].trim();
+      if (!pmap[alias]) {
+        const p = {name, alias, type:pm[1].toLowerCase()};
+        parts.push(p); pmap[alias]=p; pmap[name]=p;
+      }
+      continue;
+    }
+
+    // arrows
+    const am = line.match(/^(\S[\w\s]*?)\s*(->>?|-->>?|-->|->)\s*([\w\s]+?)\s*:\s*(.*)/);
+    if (am) {
+      const from=am[1].trim(), to=am[3].trim(), label=am[4].trim(), dashed=am[2].startsWith('--');
+      ensP(from); ensP(to);
+      evts.push({type:'arrow', from, to, label, dashed});
+      continue;
+    }
+
+    // notes
+    const nm = line.match(/^note\s+(right|left|over)\s+(?:of\s+)?(\S[\w\s]*?)(?:\s*#\w+)?\s*$/i);
+    if (nm) {
+      let txt = '';
+      while (i < lines.length && lines[i].trim().toLowerCase() !== 'end note') {
+        txt += (txt?'\n':'') + lines[i].trim(); i++;
+      }
+      i++;
+      evts.push({type:'note', pos:nm[1], target:nm[2].trim(), text:txt});
+      continue;
+    }
+
+    // blocks
+    const blk = line.match(/^(alt|else|group|opt|loop)\s*(?:#(\w+))?\s*(.*)/i);
+    if (blk) {
+      const kw=blk[1].toLowerCase(), col=blk[2]||'', lbl=blk[3].trim();
+      evts.push({type: kw==='else'?'else':'block_start', kw, col, lbl});
+      continue;
+    }
+    if (line.match(/^end\s*$/i)) { evts.push({type:'block_end'}); continue; }
+  }
+  return {parts, evts};
+}
+
+// ─────────────────────────────────────────────
+// Renderer
+// ─────────────────────────────────────────────
+function renderSVG(parts, evts) {
+  const PAD = 56;
+  const HEAD_H = 0;  // headers are HTML, SVG starts at y=0
+  const CHAR_W = 7.2;   // px per character in 12px IBM Plex Mono
+  const MIN_COL = 280;  // hard floor
+
+  // ── Pass 1: figure out required column width ──
+  // Consider: participant box widths + arrow labels between adjacent columns
+  const partW = parts.map(p => p.alias.length * CHAR_W + 48);
+  const colFromParts = Math.max(MIN_COL, ...partW);
+
+  // For each arrow between adjacent participants, estimate required space
+  const pIdx0 = {};
+  parts.forEach((p,i) => { pIdx0[p.name]=i; pIdx0[p.alias]=i; });
+
+  let colFromLabels = MIN_COL;
+  evts.forEach(ev => {
+    if (ev.type !== 'arrow') return;
+    const fi = pIdx0[ev.from], ti = pIdx0[ev.to];
+    if (fi === undefined || ti === undefined) return;
+    const span = Math.abs(fi - ti); // columns spanned
+    if (span === 0) return;         // self-arrow — doesn't affect COL
+    const lbl = ev.label.replace(/\\n/g,' · ');
+    // label needs ~CHAR_W px per char, split over `span` columns
+    const requiredColW = Math.ceil((lbl.length * CHAR_W + 32) / span);
+    colFromLabels = Math.max(colFromLabels, requiredColW);
+  });
+
+  const COL = Math.max(colFromParts, colFromLabels);
+  const W = PAD*2 + parts.length*COL;
+
+  const pIdx = {};
+  parts.forEach((p,i) => { pIdx[p.name]=i; pIdx[p.alias]=i; });
+  function cx(n) { const i=pIdx[n]; return i!==undefined ? PAD+i*COL+COL/2 : PAD+COL/2; }
+
+  // ── Build rows ──
+  const rows = [];
+  const blockStack = [];
+  const blockRects = [];
+
+  evts.forEach(ev => {
+    if (ev.type === 'arrow') {
+      const fx=cx(ev.from), tx=cx(ev.to);
+      const lbl = ev.label.replace(/\\n/g,' · ');
+      const gap = Math.abs(tx-fx) || COL;
+      // allow text to be slightly wider than the gap (label sits above arrow)
+      const maxCh = Math.max(14, Math.floor(gap / (CHAR_W * 0.92)));
+      const lblLines = splitTxt(lbl, maxCh);
+      const h = Math.max(58, lblLines.length*20+36);
+      rows.push({ev, fx, tx, lblLines, h, depth:blockStack.length});
+
+    } else if (ev.type === 'note') {
+      rows.push({ev, h:72, depth:blockStack.length});
+
+    } else if (ev.type === 'block_start') {
+      blockStack.push({ev, startRowIdx:rows.length, blockRectIdx:blockRects.length});
+      blockRects.push({ev, startRowIdx:rows.length, endRowIdx:-1,
+        depth:blockStack.length-1, sections:[{ev, col:ev.col, startRowIdx:rows.length}]});
+      rows.push({ev, h:30, isBlockHeader:true,
+        depth:blockStack.length-1, blockRectIdx:blockRects.length-1});
+
+    } else if (ev.type === 'else') {
+      if (blockStack.length) {
+        const top = blockStack[blockStack.length-1];
+        // ← store the ELSE's own color, not the parent's
+        blockRects[top.blockRectIdx].sections.push({ev, col:ev.col, startRowIdx:rows.length});
+      }
+      rows.push({ev, h:24, isElse:true, depth:blockStack.length-1});
+
+    } else if (ev.type === 'block_end') {
+      if (blockStack.length) {
+        const top = blockStack.pop();
+        blockRects[top.blockRectIdx].endRowIdx = rows.length;
+      }
+      rows.push({ev, h:10, isBlockEnd:true, depth:blockStack.length});
+    }
+  });
+
+  let totalH = 8;
+  rows.forEach(r => { r.y = totalH; totalH += r.h; });
+  totalH += 72;
+
+  // ── SVG output ──
+  let s = `<svg class="seq-svg" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${totalH}px;font-family:'IBM Plex Sans',sans-serif">`;
+
+  s += `<defs>
+    <marker id="ah"  markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#444"/></marker>
+    <marker id="ahd" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#aaa"/></marker>
+    <marker id="ahr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#d04060"/></marker>
+  </defs>`;
+
+  // ── Block fills (drawn first, behind everything) ──
+  blockRects.forEach(br => {
+    if (br.endRowIdx < 0) return;
+    const p = pal(br.ev.col);
+    const indent = br.depth * 10;
+    const bx = PAD + indent;
+    const bw = W - PAD*2 - indent*2;
+    const startY = br.startRowIdx < rows.length ? rows[br.startRowIdx].y : HEAD_H;
+    const endRow = rows[br.endRowIdx];
+    const endY = endRow ? endRow.y + endRow.h : startY + 40;
+
+    s += `<rect x="${bx}" y="${startY}" width="${bw}" height="${endY-startY}" rx="6" fill="${p.bg}" stroke="${p.border}" stroke-width="0.75"/>`;
+
+    br.sections.forEach((sec, si) => {
+      const secRow = rows[sec.startRowIdx];
+      if (!secRow) return;
+      const sy = secRow.y;
+      const kw = si === 0 ? (br.ev.kw||'alt') : (sec.ev.kw||'else');
+      const lbl = si === 0 ? br.ev.lbl : sec.ev.lbl;
+      const labelTxt = `${kw}${lbl ? ' — '+lbl : ''}`;
+      const pillW = Math.min(labelTxt.length*7.2+24, bw-20);
+
+      // ← each section uses ITS OWN color, fallback to parent block color
+      const secPal = (sec.col && sec.col.trim()) ? pal(sec.col) : p;
+
+      if (si > 0) {
+        // draw separator line first
+        s += `<line x1="${bx+1}" y1="${sy}" x2="${bx+bw-1}" y2="${sy}" stroke="${secPal.border}" stroke-width="0.75" stroke-dasharray="4,3"/>`;
+        // fill the section background with its own color from separator to next section/end
+        const nextSec = br.sections[si+1];
+        const sectionEndY = nextSec ? (rows[nextSec.startRowIdx]||{y:sy+10}).y : endY;
+        if (secPal !== p) {
+          s += `<rect x="${bx+1}" y="${sy}" width="${bw-2}" height="${sectionEndY-sy}" fill="${secPal.bg}"/>`;
+        }
+      }
+
+      s += `<rect x="${bx+8}" y="${sy+5}" width="${pillW}" height="19" rx="3" fill="${secPal.bgSolid}" stroke="${secPal.border}" stroke-width="0.5"/>`;
+      s += `<text x="${bx+18}" y="${sy+17}" font-family="'IBM Plex Mono',monospace" font-size="10" font-weight="500" fill="${secPal.label}" letter-spacing=".05em">${esc(labelTxt)}</text>`;
+    });
+  });
+
+  // ── Participant headers ──
+  // ── Participant lifelines only (headers rendered as HTML sticky bar) ──
+  parts.forEach((p, i) => {
+    const x = PAD + i*COL + COL/2;
+    s += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH-62}" stroke="#d4d4d4" stroke-width="0.75" stroke-dasharray="4,5"/>`;
+  });
+
+  // ── Rows ──
+  rows.forEach(row => {
+    const ev = row.ev;
+    const y = row.y;
+
+    if (ev.type === 'arrow') {
+      const {fx, tx, lblLines} = row;
+      const self = Math.abs(fx-tx) < 4;
+      const ay = y + row.h - 18;
+      const lbase = y + 16;
+      const isDashed = ev.dashed;
+      const isErr = ev.label && (ev.label.includes('502') || ev.label.toLowerCase().includes('ошибка'));
+      const strokeC = isErr ? '#d04060' : isDashed ? '#aaa' : '#444';
+      const mk = isErr ? 'url(#ahr)' : isDashed ? 'url(#ahd)' : 'url(#ah)';
+      const labelC = isDashed ? '#888' : '#333';
+
+      lblLines.forEach((ln, li) => {
+        const midX = self ? fx+60 : (fx+tx)/2;
+        s += `<text x="${midX}" y="${lbase+li*18}" text-anchor="middle" font-family="'IBM Plex Sans',sans-serif" font-size="12" fill="${labelC}">${esc(ln)}</text>`;
+      });
+
+      if (self) {
+        // self-loop: stick within own column, max 60px wide
+        const loopW = Math.min(60, COL/2 - 10);
+        const bx2 = fx + loopW, oy = ay-7, boxH = 18;
+        s += `<path d="M${fx} ${oy} L${bx2} ${oy} L${bx2} ${oy+boxH} L${fx+10} ${oy+boxH}" fill="none" stroke="${strokeC}" stroke-width="1.2" marker-end="${mk}" stroke-linejoin="round"/>`;
+      } else {
+        const da = isDashed ? '5,3' : 'none';
+        s += `<line x1="${fx}" y1="${ay}" x2="${tx}" y2="${ay}" stroke="${strokeC}" stroke-width="1.2" stroke-dasharray="${da}" marker-end="${mk}"/>`;
+      }
+    }
+
+    if (ev.type === 'note') {
+      const tx2 = cx(ev.target);
+      const noteLines = ev.text.split('\n');
+      const noteW = Math.min(Math.max(...noteLines.map(l=>l.length))*7+24, COL-20);
+      const nx = ev.pos === 'left' ? tx2-noteW-8 : tx2+10;
+      const nh = noteLines.length*16+22;
+      const gy = y+6;
+      s += `<rect x="${nx}" y="${gy}" width="${noteW}" height="${nh}" rx="5" fill="#fffef5" stroke="#e0c84a" stroke-width="0.75"/>`;
+      s += `<rect x="${nx}" y="${gy}" width="${noteW}" height="3" rx="2" fill="#e0c84a"/>`;
+      noteLines.forEach((nl, li) => {
+        s += `<text x="${nx+9}" y="${gy+19+li*16}" font-family="'IBM Plex Mono',monospace" font-size="10.5" fill="#6b5000">${esc(nl)}</text>`;
+      });
+    }
+  });
+
+  // ── Participant footers ──
+  parts.forEach((p, i) => {
+    const x = PAD + i*COL + COL/2;
+    const boxW = Math.max(116, p.alias.length*8.5+36);
+    s += `<rect x="${x-boxW/2}" y="${totalH-52}" width="${boxW}" height="36" rx="6" fill="#f7f7f7" stroke="#d4d4d4" stroke-width="0.75"/>`;
+    s += `<text x="${x}" y="${totalH-29}" text-anchor="middle" font-family="'IBM Plex Mono',monospace" font-size="12" font-weight="500" fill="#222">${esc(p.alias)}</text>`;
+  });
+
+  s += '</svg>';
+  return {svg: s, COL, PAD};
+}
+
+// ─────────────────────────────────────────────
+// Zoom
+// ─────────────────────────────────────────────
+let currentZoom = 1.0;
+
+function applyZoom() {
+  const svg = document.querySelector('#out svg');
+  if (!svg) return;
+  svg.style.transform = `scale(${currentZoom})`;
+  svg.style.transformOrigin = 'top left';
+  svg.style.display = 'block';
+  const w = parseFloat(svg.getAttribute('width') || svg.viewBox.baseVal.width);
+  const h = parseFloat(svg.getAttribute('height') || svg.viewBox.baseVal.height);
+  document.getElementById('out').style.width  = Math.round(w * currentZoom) + 'px';
+  document.getElementById('out').style.height = Math.round(h * currentZoom) + 'px';
+  document.getElementById('zoomVal').textContent = Math.round(currentZoom*100) + '%';
+  if (_lastParts.length) buildStickyHeader(_lastParts, _lastCOL, _lastPAD, currentZoom);
+}
+
+function zoom(delta) {
+  currentZoom = Math.max(0.2, Math.min(3, currentZoom + delta));
+  applyZoom();
+}
+
+function fitToScreen() {
+  const svg = document.querySelector('#out svg');
+  if (!svg) return;
+  const canvas = document.getElementById('canvas');
+  const svgW = parseFloat(svg.getAttribute('width') || svg.viewBox.baseVal.width);
+  const canvasW = canvas.clientWidth - 64;
+  currentZoom = Math.min(1, canvasW / svgW);
+  applyZoom();
+}
+
+// Scroll to zoom
+document.getElementById('canvas').addEventListener('wheel', e => {
+  if (e.ctrlKey || e.metaKey) {
+    e.preventDefault();
+    zoom(e.deltaY < 0 ? 0.1 : -0.1);
+  }
+}, {passive: false});
+
+// ─────────────────────────────────────────────
+// Actions
+// ─────────────────────────────────────────────
+function buildStickyHeader(parts, COL, PAD, zoom) {
+  const sh = document.getElementById('stickyHeader');
+  const inner = document.getElementById('stickyHeaderInner');
+  inner.innerHTML = '';
+
+  // leading pad
+  const leadPad = document.createElement('div');
+  leadPad.style.cssText = `width:${PAD * zoom}px;flex-shrink:0`;
+  inner.appendChild(leadPad);
+
+  parts.forEach((p, i) => {
+    const colPx = COL * zoom;
+    const cell = document.createElement('div');
+    cell.className = 'sticky-part';
+    cell.style.cssText = `width:${colPx}px`;
+
+    if (p.type === 'actor') {
+      const label = document.createElement('span');
+      label.className = 'sticky-part-actor';
+      label.textContent = p.alias;
+      cell.appendChild(label);
+    } else {
+      const box = document.createElement('span');
+      box.className = 'sticky-part-box';
+      box.textContent = p.alias;
+      cell.appendChild(box);
+    }
+    inner.appendChild(cell);
+  });
+
+  sh.style.display = 'block';
+  // sync sticky header scroll with canvas horizontal scroll
+  const canvas = document.getElementById('canvas');
+  canvas._stickyScrollHandler = () => {
+    inner.parentElement.scrollLeft = canvas.scrollLeft;
+  };
+  canvas.removeEventListener('scroll', canvas._stickyScrollHandler);
+  canvas.addEventListener('scroll', canvas._stickyScrollHandler);
+}
+
+// Store layout info for sticky header rebuilds on zoom
+let _lastParts = [], _lastCOL = 280, _lastPAD = 56;
+
+function loadEx() { document.getElementById('src').value = EX; }
+function clearSrc() { document.getElementById('src').value = ''; }
+
+function doRender() {
+  const raw = document.getElementById('src').value.trim();
+  if (!raw) return;
+  const {parts, evts} = parseUML(raw);
+  if (!parts.length) { notify('no participants found'); return; }
+
+  const {svg, COL, PAD} = renderSVG(parts, evts);
+  _lastParts = parts; _lastCOL = COL; _lastPAD = PAD;
+
+  document.getElementById('out').innerHTML = svg;
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('diagramWrap').style.display = 'inline-block';
+  document.getElementById('stat').textContent =
+    `${parts.length} participants · ${evts.filter(e=>e.type==='arrow').length} messages`;
+
+  currentZoom = 1.0;
+  writeHash(raw);
+  setTimeout(() => {
+    fitToScreen();
+    buildStickyHeader(_lastParts, _lastCOL, _lastPAD, currentZoom);
+  }, 50);
+}
+
+function dlSVG() {
+  const el = document.querySelector('#out svg');
+  if (!el) { notify('render first'); return; }
+  const blob = new Blob([el.outerHTML], {type:'image/svg+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'diagram.svg'; a.click();
+  notify('svg saved');
+}
+
+function dlPNG() {
+  const el = document.querySelector('#out svg');
+  if (!el) { notify('render first'); return; }
+  const vb = el.viewBox.baseVal, sc = 2;
+  const cv = document.createElement('canvas');
+  cv.width = vb.width*sc; cv.height = vb.height*sc;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,cv.width,cv.height);
+  const img = new Image();
+  img.onload = () => {
+    ctx.scale(sc,sc); ctx.drawImage(img,0,0,vb.width,vb.height);
+    const a = document.createElement('a');
+    a.href = cv.toDataURL('image/png'); a.download = 'diagram.png'; a.click();
+    notify('png saved');
+  };
+  img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(el.outerHTML)));
+}
+
+// ─────────────────────────────────────────────
+// URL hash encode / decode (PlantUML-compatible)
+// ─────────────────────────────────────────────
+const B64_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_';
+
+function encode6bit(b) { return B64_CHARS[b & 0x3F]; }
+
+function append3bytes(b1, b2, b3) {
+  const c1 = b1 >> 2;
+  const c2 = ((b1 & 0x3) << 4) | (b2 >> 4);
+  const c3 = ((b2 & 0xF) << 2) | (b3 >> 6);
+  const c4 = b3 & 0x3F;
+  return encode6bit(c1) + encode6bit(c2) + encode6bit(c3) + encode6bit(c4);
+}
+
+function encodeUML(text) {
+  const data = pako.deflateRaw(text, { level: 9 });
+  let r = '';
+  for (let i = 0; i < data.length; i += 3) {
+    if (i + 2 < data.length) r += append3bytes(data[i], data[i+1], data[i+2]);
+    else if (i + 1 < data.length) r += append3bytes(data[i], data[i+1], 0);
+    else r += append3bytes(data[i], 0, 0);
+  }
+  return r;
+}
+
+function decode6bit(c) {
+  const i = B64_CHARS.indexOf(c);
+  return i < 0 ? 0 : i;
+}
+
+function decodeUML(encoded) {
+  const bytes = [];
+  for (let i = 0; i < encoded.length; i += 4) {
+    const c1 = decode6bit(encoded[i]||'0');
+    const c2 = decode6bit(encoded[i+1]||'0');
+    const c3 = decode6bit(encoded[i+2]||'0');
+    const c4 = decode6bit(encoded[i+3]||'0');
+    bytes.push((c1 << 2) | (c2 >> 4));
+    bytes.push(((c2 & 0xF) << 4) | (c3 >> 2));
+    bytes.push(((c3 & 0x3) << 6) | c4);
+  }
+  try {
+    return pako.inflateRaw(new Uint8Array(bytes), { to: 'string' });
+  } catch(e) {
+    return null;
+  }
+}
+
+function copyLink() {
+  const raw = document.getElementById('src').value.trim();
+  if (!raw) { notify('nothing to share'); return; }
+  const encoded = encodeUML(raw);
+  const url = location.href.split('#')[0] + '#' + encoded;
+  navigator.clipboard.writeText(url).then(() => {
+    notify('link copied to clipboard');
+    document.getElementById('btnShare').textContent = '✓ copied';
+    setTimeout(() => { document.getElementById('btnShare').textContent = '⌘ copy link'; }, 2000);
+  }).catch(() => {
+    prompt('Copy this link:', url);
+  });
+}
+
+function writeHash(text) {
+  try {
+    const encoded = encodeUML(text);
+    history.replaceState(null, '', '#' + encoded);
+  } catch(e) {}
+}
+
+function readHash() {
+  const hash = location.hash.slice(1);
+  if (!hash) return null;
+  try { return decodeUML(hash); } catch(e) { return null; }
+}
+document.getElementById('src').addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doRender(); }
+});
+
+// ── Init: restore from URL hash or load example ──
+(function init() {
+  const fromHash = readHash();
+  if (fromHash && fromHash.trim()) {
+    document.getElementById('src').value = fromHash;
+  } else {
+    loadEx();
+  }
+  doRender();
+})();
+</script>
+</body>
+</html>
