@@ -48,7 +48,7 @@
   /* ── Layout ── */
   .layout {
     display: grid;
-    grid-template-rows: 52px 1fr;
+    grid-template-rows: 52px 0px 1fr; /* sticky-header row starts at 0, grows via JS */
     grid-template-columns: 340px 1fr;
     height: 100vh;
     gap: 0;
@@ -110,7 +110,7 @@
   /* ── Sidebar ── */
   .sidebar {
     grid-column: 1;
-    grid-row: 2;
+    grid-row: 2 / 4; /* span sticky-header row + canvas row */
     display: flex;
     flex-direction: column;
     border-right: 0.5px solid var(--border2);
@@ -165,12 +165,10 @@
   /* ── Canvas ── */
   .canvas {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
     overflow: auto;
     background: var(--surface);
     position: relative;
-    display: flex;
-    flex-direction: column;
   }
   .canvas-inner {
     padding: 32px;
@@ -271,35 +269,30 @@
   /* ── SVG diagram styles ── */
   .seq-svg { display: block; }
 
-  /* ── Sticky participant header overlay ── */
-  /*
-   * FIX: removed overflow:hidden so content isn't clipped.
-   * The inner div now has an explicit min-width set from JS to match
-   * the full zoomed SVG width, and horizontal scroll is synced with canvas.
-   */
+  /* ── Sticky participant header ── */
+  /* Lives in grid-row 2, col 2 — completely outside the scrollable canvas.
+     Width is clipped to the canvas column; overflow:hidden hides what's beyond.
+     Horizontal offset is synced via JS (scrollLeft → translateX on inner). */
   .sticky-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
+    grid-column: 2;
+    grid-row: 2;
     background: var(--bg);
     border-bottom: 0.5px solid var(--border2);
-    display: none;
-    /* FIX: overflow hidden → visible so content is never clipped */
-    overflow: visible;
-    flex-shrink: 0;
+    overflow: hidden;       /* clip — inner is translated, not scrolled */
+    display: none;          /* shown after first render */
+    height: 0;              /* collapsed until shown */
   }
-  /* FIX: added overflow-x:hidden + will-change for smooth sync */
-  .sticky-header-scroll {
-    overflow-x: hidden;
-    overflow-y: visible;
-    width: 100%;
+  .sticky-header.visible {
+    display: block;
+    height: 48px;
   }
   .sticky-header-inner {
     display: flex;
     align-items: center;
     height: 48px;
     white-space: nowrap;
-    /* FIX: min-width is set from JS to match zoomed SVG total width */
+    will-change: transform;
+    /* width set from JS to full zoomed SVG width */
   }
   .sticky-part {
     display: inline-flex;
@@ -370,14 +363,13 @@
     </div>
   </aside>
 
+  <!-- Sticky header: grid-row 2 col 2, outside the scrollable canvas -->
+  <div id="stickyHeader" class="sticky-header">
+    <div class="sticky-header-inner" id="stickyHeaderInner"></div>
+  </div>
+
   <!-- Canvas -->
   <main class="canvas" id="canvas">
-    <!-- FIX: wrapped inner in a scroll-sync div -->
-    <div id="stickyHeader" class="sticky-header">
-      <div class="sticky-header-scroll" id="stickyHeaderScroll">
-        <div class="sticky-header-inner" id="stickyHeaderInner"></div>
-      </div>
-    </div>
     <div class="canvas-inner" id="canvasInner">
       <div class="empty-state" id="emptyState">
         <div class="empty-icon">⟶</div>
@@ -768,20 +760,17 @@ document.getElementById('canvas').addEventListener('wheel', e => {
 // Actions
 // ─────────────────────────────────────────────
 
-// FIX: rebuilt buildStickyHeader to properly track full zoomed width
-// and sync scroll without overflow:hidden clipping.
+// FIX: sticky header lives outside canvas in its own grid row.
+// Sync is done via CSS transform: translateX(-scrollLeft) on the inner div.
+// This avoids any overflow/clip issues entirely.
 function buildStickyHeader(parts, COL, PAD, zoom) {
   const sh = document.getElementById('stickyHeader');
   const inner = document.getElementById('stickyHeaderInner');
   inner.innerHTML = '';
 
-  // Total zoomed SVG width = same formula as renderSVG: PAD*2 + parts.length*COL
   const totalZoomedW = Math.round((PAD * 2 + parts.length * COL) * zoom);
+  inner.style.width = totalZoomedW + 'px';
 
-  // Set inner min-width to the full zoomed SVG width so it never clips
-  inner.style.minWidth = totalZoomedW + 'px';
-
-  // leading pad — matches SVG left padding at current zoom
   const leadPad = document.createElement('div');
   leadPad.style.cssText = `width:${PAD * zoom}px;flex-shrink:0`;
   inner.appendChild(leadPad);
@@ -806,23 +795,22 @@ function buildStickyHeader(parts, COL, PAD, zoom) {
     inner.appendChild(cell);
   });
 
-  sh.style.display = 'block';
+  // Show the header row: toggle class + update grid template
+  sh.classList.add('visible');
+  document.querySelector('.layout').style.gridTemplateRows = '52px 48px 1fr';
 
-  // FIX: sync horizontal scroll: canvas scrollLeft → sticky-header-scroll scrollLeft
+  // Remove old scroll listener
   const canvas = document.getElementById('canvas');
-  const scrollEl = document.getElementById('stickyHeaderScroll');
-
-  // Remove old listener before adding new one to avoid stacking
   if (canvas._stickyScrollHandler) {
     canvas.removeEventListener('scroll', canvas._stickyScrollHandler);
   }
+  // Sync: translate inner by -scrollLeft so it tracks canvas horizontal scroll
   canvas._stickyScrollHandler = () => {
-    scrollEl.scrollLeft = canvas.scrollLeft;
+    inner.style.transform = `translateX(-${canvas.scrollLeft}px)`;
   };
   canvas.addEventListener('scroll', canvas._stickyScrollHandler);
-
-  // Immediately sync current scroll position
-  scrollEl.scrollLeft = canvas.scrollLeft;
+  // Sync immediately
+  inner.style.transform = `translateX(-${canvas.scrollLeft}px)`;
 }
 
 let _lastParts = [], _lastCOL = 280, _lastPAD = 56;
