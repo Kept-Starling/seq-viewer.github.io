@@ -272,6 +272,11 @@
   .seq-svg { display: block; }
 
   /* ── Sticky participant header overlay ── */
+  /*
+   * FIX: removed overflow:hidden so content isn't clipped.
+   * The inner div now has an explicit min-width set from JS to match
+   * the full zoomed SVG width, and horizontal scroll is synced with canvas.
+   */
   .sticky-header {
     position: sticky;
     top: 0;
@@ -279,15 +284,22 @@
     background: var(--bg);
     border-bottom: 0.5px solid var(--border2);
     display: none;
-    overflow: hidden;
+    /* FIX: overflow hidden → visible so content is never clipped */
+    overflow: visible;
     flex-shrink: 0;
+  }
+  /* FIX: added overflow-x:hidden + will-change for smooth sync */
+  .sticky-header-scroll {
+    overflow-x: hidden;
+    overflow-y: visible;
+    width: 100%;
   }
   .sticky-header-inner {
     display: flex;
     align-items: center;
     height: 48px;
-    /* no overflow:auto — we scroll it programmatically */
     white-space: nowrap;
+    /* FIX: min-width is set from JS to match zoomed SVG total width */
   }
   .sticky-part {
     display: inline-flex;
@@ -360,8 +372,11 @@
 
   <!-- Canvas -->
   <main class="canvas" id="canvas">
+    <!-- FIX: wrapped inner in a scroll-sync div -->
     <div id="stickyHeader" class="sticky-header">
-      <div class="sticky-header-inner" id="stickyHeaderInner"></div>
+      <div class="sticky-header-scroll" id="stickyHeaderScroll">
+        <div class="sticky-header-inner" id="stickyHeaderInner"></div>
+      </div>
     </div>
     <div class="canvas-inner" id="canvasInner">
       <div class="empty-state" id="emptyState">
@@ -530,16 +545,13 @@ function parseUML(raw) {
 // ─────────────────────────────────────────────
 function renderSVG(parts, evts) {
   const PAD = 56;
-  const HEAD_H = 0;  // headers are HTML, SVG starts at y=0
-  const CHAR_W = 7.2;   // px per character in 12px IBM Plex Mono
-  const MIN_COL = 280;  // hard floor
+  const HEAD_H = 0;
+  const CHAR_W = 7.2;
+  const MIN_COL = 280;
 
-  // ── Pass 1: figure out required column width ──
-  // Consider: participant box widths + arrow labels between adjacent columns
   const partW = parts.map(p => p.alias.length * CHAR_W + 48);
   const colFromParts = Math.max(MIN_COL, ...partW);
 
-  // For each arrow between adjacent participants, estimate required space
   const pIdx0 = {};
   parts.forEach((p,i) => { pIdx0[p.name]=i; pIdx0[p.alias]=i; });
 
@@ -548,10 +560,9 @@ function renderSVG(parts, evts) {
     if (ev.type !== 'arrow') return;
     const fi = pIdx0[ev.from], ti = pIdx0[ev.to];
     if (fi === undefined || ti === undefined) return;
-    const span = Math.abs(fi - ti); // columns spanned
-    if (span === 0) return;         // self-arrow — doesn't affect COL
+    const span = Math.abs(fi - ti);
+    if (span === 0) return;
     const lbl = ev.label.replace(/\\n/g,' · ');
-    // label needs ~CHAR_W px per char, split over `span` columns
     const requiredColW = Math.ceil((lbl.length * CHAR_W + 32) / span);
     colFromLabels = Math.max(colFromLabels, requiredColW);
   });
@@ -563,7 +574,6 @@ function renderSVG(parts, evts) {
   parts.forEach((p,i) => { pIdx[p.name]=i; pIdx[p.alias]=i; });
   function cx(n) { const i=pIdx[n]; return i!==undefined ? PAD+i*COL+COL/2 : PAD+COL/2; }
 
-  // ── Build rows ──
   const rows = [];
   const blockStack = [];
   const blockRects = [];
@@ -573,7 +583,6 @@ function renderSVG(parts, evts) {
       const fx=cx(ev.from), tx=cx(ev.to);
       const lbl = ev.label.replace(/\\n/g,' · ');
       const gap = Math.abs(tx-fx) || COL;
-      // allow text to be slightly wider than the gap (label sits above arrow)
       const maxCh = Math.max(14, Math.floor(gap / (CHAR_W * 0.92)));
       const lblLines = splitTxt(lbl, maxCh);
       const h = Math.max(58, lblLines.length*20+36);
@@ -592,7 +601,6 @@ function renderSVG(parts, evts) {
     } else if (ev.type === 'else') {
       if (blockStack.length) {
         const top = blockStack[blockStack.length-1];
-        // ← store the ELSE's own color, not the parent's
         blockRects[top.blockRectIdx].sections.push({ev, col:ev.col, startRowIdx:rows.length});
       }
       rows.push({ev, h:24, isElse:true, depth:blockStack.length-1});
@@ -610,7 +618,6 @@ function renderSVG(parts, evts) {
   rows.forEach(r => { r.y = totalH; totalH += r.h; });
   totalH += 72;
 
-  // ── SVG output ──
   let s = `<svg class="seq-svg" viewBox="0 0 ${W} ${totalH}" xmlns="http://www.w3.org/2000/svg" style="width:${W}px;height:${totalH}px;font-family:'IBM Plex Sans',sans-serif">`;
 
   s += `<defs>
@@ -619,7 +626,6 @@ function renderSVG(parts, evts) {
     <marker id="ahr" markerWidth="9" markerHeight="7" refX="8" refY="3.5" orient="auto"><polygon points="0 0,9 3.5,0 7" fill="#d04060"/></marker>
   </defs>`;
 
-  // ── Block fills (drawn first, behind everything) ──
   blockRects.forEach(br => {
     if (br.endRowIdx < 0) return;
     const p = pal(br.ev.col);
@@ -640,14 +646,10 @@ function renderSVG(parts, evts) {
       const lbl = si === 0 ? br.ev.lbl : sec.ev.lbl;
       const labelTxt = `${kw}${lbl ? ' — '+lbl : ''}`;
       const pillW = Math.min(labelTxt.length*7.2+24, bw-20);
-
-      // ← each section uses ITS OWN color, fallback to parent block color
       const secPal = (sec.col && sec.col.trim()) ? pal(sec.col) : p;
 
       if (si > 0) {
-        // draw separator line first
         s += `<line x1="${bx+1}" y1="${sy}" x2="${bx+bw-1}" y2="${sy}" stroke="${secPal.border}" stroke-width="0.75" stroke-dasharray="4,3"/>`;
-        // fill the section background with its own color from separator to next section/end
         const nextSec = br.sections[si+1];
         const sectionEndY = nextSec ? (rows[nextSec.startRowIdx]||{y:sy+10}).y : endY;
         if (secPal !== p) {
@@ -660,14 +662,11 @@ function renderSVG(parts, evts) {
     });
   });
 
-  // ── Participant headers ──
-  // ── Participant lifelines only (headers rendered as HTML sticky bar) ──
   parts.forEach((p, i) => {
     const x = PAD + i*COL + COL/2;
     s += `<line x1="${x}" y1="0" x2="${x}" y2="${totalH-62}" stroke="#d4d4d4" stroke-width="0.75" stroke-dasharray="4,5"/>`;
   });
 
-  // ── Rows ──
   rows.forEach(row => {
     const ev = row.ev;
     const y = row.y;
@@ -689,7 +688,6 @@ function renderSVG(parts, evts) {
       });
 
       if (self) {
-        // self-loop: stick within own column, max 60px wide
         const loopW = Math.min(60, COL/2 - 10);
         const bx2 = fx + loopW, oy = ay-7, boxH = 18;
         s += `<path d="M${fx} ${oy} L${bx2} ${oy} L${bx2} ${oy+boxH} L${fx+10} ${oy+boxH}" fill="none" stroke="${strokeC}" stroke-width="1.2" marker-end="${mk}" stroke-linejoin="round"/>`;
@@ -714,7 +712,6 @@ function renderSVG(parts, evts) {
     }
   });
 
-  // ── Participant footers ──
   parts.forEach((p, i) => {
     const x = PAD + i*COL + COL/2;
     const boxW = Math.max(116, p.alias.length*8.5+36);
@@ -723,7 +720,7 @@ function renderSVG(parts, evts) {
   });
 
   s += '</svg>';
-  return {svg: s, COL, PAD};
+  return {svg: s, COL, PAD, totalW: W};
 }
 
 // ─────────────────────────────────────────────
@@ -760,7 +757,6 @@ function fitToScreen() {
   applyZoom();
 }
 
-// Scroll to zoom
 document.getElementById('canvas').addEventListener('wheel', e => {
   if (e.ctrlKey || e.metaKey) {
     e.preventDefault();
@@ -771,21 +767,30 @@ document.getElementById('canvas').addEventListener('wheel', e => {
 // ─────────────────────────────────────────────
 // Actions
 // ─────────────────────────────────────────────
+
+// FIX: rebuilt buildStickyHeader to properly track full zoomed width
+// and sync scroll without overflow:hidden clipping.
 function buildStickyHeader(parts, COL, PAD, zoom) {
   const sh = document.getElementById('stickyHeader');
   const inner = document.getElementById('stickyHeaderInner');
   inner.innerHTML = '';
 
-  // leading pad
+  // Total zoomed SVG width = same formula as renderSVG: PAD*2 + parts.length*COL
+  const totalZoomedW = Math.round((PAD * 2 + parts.length * COL) * zoom);
+
+  // Set inner min-width to the full zoomed SVG width so it never clips
+  inner.style.minWidth = totalZoomedW + 'px';
+
+  // leading pad — matches SVG left padding at current zoom
   const leadPad = document.createElement('div');
   leadPad.style.cssText = `width:${PAD * zoom}px;flex-shrink:0`;
   inner.appendChild(leadPad);
 
-  parts.forEach((p, i) => {
+  parts.forEach((p) => {
     const colPx = COL * zoom;
     const cell = document.createElement('div');
     cell.className = 'sticky-part';
-    cell.style.cssText = `width:${colPx}px`;
+    cell.style.cssText = `width:${colPx}px;flex-shrink:0`;
 
     if (p.type === 'actor') {
       const label = document.createElement('span');
@@ -802,16 +807,24 @@ function buildStickyHeader(parts, COL, PAD, zoom) {
   });
 
   sh.style.display = 'block';
-  // sync sticky header scroll with canvas horizontal scroll
+
+  // FIX: sync horizontal scroll: canvas scrollLeft → sticky-header-scroll scrollLeft
   const canvas = document.getElementById('canvas');
+  const scrollEl = document.getElementById('stickyHeaderScroll');
+
+  // Remove old listener before adding new one to avoid stacking
+  if (canvas._stickyScrollHandler) {
+    canvas.removeEventListener('scroll', canvas._stickyScrollHandler);
+  }
   canvas._stickyScrollHandler = () => {
-    inner.parentElement.scrollLeft = canvas.scrollLeft;
+    scrollEl.scrollLeft = canvas.scrollLeft;
   };
-  canvas.removeEventListener('scroll', canvas._stickyScrollHandler);
   canvas.addEventListener('scroll', canvas._stickyScrollHandler);
+
+  // Immediately sync current scroll position
+  scrollEl.scrollLeft = canvas.scrollLeft;
 }
 
-// Store layout info for sticky header rebuilds on zoom
 let _lastParts = [], _lastCOL = 280, _lastPAD = 56;
 
 function loadEx() { document.getElementById('src').value = EX; }
@@ -868,7 +881,7 @@ function dlPNG() {
 }
 
 // ─────────────────────────────────────────────
-// URL hash encode / decode (PlantUML-compatible)
+// URL hash encode / decode
 // ─────────────────────────────────────────────
 const B64_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_';
 
@@ -942,11 +955,11 @@ function readHash() {
   if (!hash) return null;
   try { return decodeUML(hash); } catch(e) { return null; }
 }
+
 document.getElementById('src').addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); doRender(); }
 });
 
-// ── Init: restore from URL hash or load example ──
 (function init() {
   const fromHash = readHash();
   if (fromHash && fromHash.trim()) {
